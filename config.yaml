@@ -1,0 +1,96 @@
+version: "1.0"
+
+database:
+  host: "localhost"
+  port: 5433
+  dbname: "yugabyte"
+  user: "yugabyte"
+  password: "yugabyte"
+  options: "-c load_balance=true"
+
+schema:
+  tables:
+    standard:
+      name: "test_data"
+      ddl: |
+        CREATE TABLE IF NOT EXISTS test_data (
+            id int,
+            name varchar,
+            email varchar,
+            score float,
+            created_at timestamp,
+            PRIMARY KEY(id ASC)
+        );
+      drop_sql: "DROP TABLE IF EXISTS test_data;"
+      truncate_sql: "TRUNCATE TABLE test_data;"
+
+    optimized:
+      name: "test_data_optimized"
+      ddl: |
+        CREATE TABLE IF NOT EXISTS test_data_optimized (
+            id int,
+            name varchar,
+            email varchar,
+            score float,
+            created_at timestamp,
+            PRIMARY KEY(id ASC)
+        );
+      index_ddl: |
+        CREATE INDEX IF NOT EXISTS idx_score_name
+        ON test_data_optimized (score DESC, name ASC)
+        INCLUDE (email, created_at);
+      drop_sql: "DROP TABLE IF EXISTS test_data_optimized;"
+      populate_sql: |
+        INSERT INTO test_data_optimized
+        SELECT id, name, email, score, created_at FROM test_data;
+
+queries:
+  write:
+    copy_sql: "COPY test_data FROM STDIN WITH (FORMAT CSV)"
+
+  read_standard:
+    sql: |
+      SELECT id, name, email, score, created_at
+      FROM test_data
+      WHERE score BETWEEN %s AND %s
+      ORDER BY score DESC, name ASC
+      LIMIT 100;
+    parameters:
+      - type: "float_range"
+        min: 0.0
+        max: 50.0
+        range_size_min: 5.0
+        range_size_max: 50.0
+
+  read_optimized:
+    sql: |
+      SELECT id, name, email, score, created_at
+      FROM test_data_optimized
+      WHERE score BETWEEN %s AND %s
+      ORDER BY score DESC, name ASC
+      LIMIT 100;
+    parameters:
+      - type: "float_range"
+        min: 0.0
+        max: 50.0
+        range_size_min: 5.0
+        range_size_max: 50.0
+
+data_generation:
+  format: "csv"
+  columns:
+    - name: "id"
+      type: "sequential_int"
+    - name: "name"
+      type: "random_string"
+      length: 15
+    - name: "email"
+      type: "composite"
+      pattern: "{name}@example.com"
+    - name: "score"
+      type: "random_float"
+      min: 0.0
+      max: 100.0
+    - name: "created_at"
+      type: "random_timestamp"
+      days_back: 365

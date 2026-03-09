@@ -4,20 +4,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DB_HOST = "localhost"
-DB_PORT = "5433"
-DB_NAME = "yugabyte"
-DB_USER = "yugabyte"
-DB_PASSWORD = "yugabyte"
-
-
-def get_connection_string():
-    return (
-        f"host={DB_HOST} port={DB_PORT} dbname={DB_NAME} "
-        f"user={DB_USER} password={DB_PASSWORD} "
-        f"options='-c load_balance=true'"
-    )
-
 
 def tune_session(conn):
     """Apply per-session performance tuning suitable for bulk loading."""
@@ -26,100 +12,64 @@ def tune_session(conn):
         cur.execute("SET session_replication_role = 'replica'")
 
 
-def init_db_schema():
-    """Drop and recreate both the standard and optimized test tables."""
-    with psycopg2.connect(get_connection_string()) as conn:
+def init_db_schema(dsn: str, tables: dict):
+    """
+    Drop and recreate all tables defined in the YAML schema block.
+    `tables` is the dict at cfg['schema']['tables'].
+    """
+    with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            # Standard table (unoptimized)
-            cur.execute("DROP TABLE IF EXISTS test_data;")
-            cur.execute("""
-                CREATE TABLE test_data (
-                    id int,
-                    name varchar,
-                    email varchar,
-                    score float,
-                    created_at timestamp,
-                    PRIMARY KEY(id ASC)
-                );
-            """)
-
-            # Optimized table: same schema, but with a covering secondary index
-            cur.execute("DROP TABLE IF EXISTS test_data_optimized;")
-            cur.execute("""
-                CREATE TABLE test_data_optimized (
-                    id int,
-                    name varchar,
-                    email varchar,
-                    score float,
-                    created_at timestamp,
-                    PRIMARY KEY(id ASC)
-                );
-            """)
-            cur.execute("""
-                CREATE INDEX idx_score_name
-                ON test_data_optimized (score DESC, name ASC)
-                INCLUDE (email, created_at);
-            """)
-
+            for key, tbl in tables.items():
+                if drop := tbl.get("drop_sql"):
+                    cur.execute(drop)
+                cur.execute(tbl["ddl"])
+                if index_ddl := tbl.get("index_ddl"):
+                    cur.execute(index_ddl)
+                logger.info("Table '%s' initialized.", tbl["name"])
         conn.commit()
-        logger.info("Schema initialized (test_data and test_data_optimized tables created).")
 
 
-def init_optimized_schema_only():
-    """Initialize only the optimized table (for read benchmark re-runs)."""
-    with psycopg2.connect(get_connection_string()) as conn:
+def clear_standard_data(dsn: str, tables: dict):
+    """Truncate the standard (write-target) table defined in the YAML schema."""
+    standard = tables.get("standard", {})
+    truncate_sql = standard.get("truncate_sql")
+    if not truncate_sql:
+        return
+    with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute("DROP TABLE IF EXISTS test_data_optimized;")
-            cur.execute("""
-                CREATE TABLE test_data_optimized (
-                    id int,
-                    name varchar,
-                    email varchar,
-                    score float,
-                    created_at timestamp,
-                    PRIMARY KEY(id ASC)
-                );
-            """)
-            cur.execute("""
-                CREATE INDEX idx_score_name
-                ON test_data_optimized (score DESC, name ASC)
-                INCLUDE (email, created_at);
-            """)
+            cur.execute(truncate_sql)
         conn.commit()
-        logger.info("Optimized schema initialized.")
+        logger.info("Standard table '%s' truncated.", standard.get("name"))
 
 
-def clear_test_data():
-    """Truncate the test_data table."""
-    with psycopg2.connect(get_connection_string()) as conn:
+def populate_optimized_from_standard(dsn: str, tables: dict):
+    """
+    Drop, recreate, and populate the optimized table from the standard table,
+    as defined by the YAML schema block.
+    """
+    optimized = tables.get("optimized", {})
+    with psycopg2.connect(dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute("TRUNCATE TABLE test_data;")
+            if drop := optimized.get("drop_sql"):
+                cur.execute(drop)
+            cur.execute(optimized["ddl"])
+            if index_ddl := optimized.get("index_ddl"):
+                cur.execute(index_ddl)
+            if populate_sql := optimized.get("populate_sql"):
+                cur.execute(populate_sql)
+                logger.info(
+                    "Optimized table '%s' populated from standard.", optimized.get("name")
+                )
         conn.commit()
-        logger.info("test_data table truncated.")
-
-
-def populate_optimized_from_standard():
-    """Copy all rows from test_data into test_data_optimized."""
-    with psycopg2.connect(get_connection_string()) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO test_data_optimized "
-                "SELECT id, name, email, score, created_at FROM test_data;"
-            )
-        conn.commit()
-        logger.info("test_data_optimized populated from test_data.")
 
 
 class SmartConnectionPool:
     """Thread-safe connection pool backed by YugabyteDB Smart Driver."""
 
-    def __init__(self, minconn: int, maxconn: int):
-        self.pool = pool.ThreadedConnectionPool(
-            minconn, maxconn, dsn=get_connection_string()
-        )
+    def __init__(self, dsn: str, minconn: int, maxconn: int):
+        self.pool = pool.ThreadedConnectionPool(minconn, maxconn, dsn=dsn)
         logger.info(
-            "ThreadedConnectionPool ready (min=%d, max=%d, load_balance=true).",
-            minconn, maxconn,
+            "ThreadedConnectionPool ready (min=%d, max=%d).", minconn, maxconn,
         )
 
     def getconn(self):

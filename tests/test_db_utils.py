@@ -5,20 +5,9 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from db_utils import get_connection_string, tune_session, SmartConnectionPool
+from db_utils import tune_session, SmartConnectionPool
 
-
-class TestGetConnectionString(unittest.TestCase):
-    def test_contains_load_balance(self):
-        conn_str = get_connection_string()
-        self.assertIn("load_balance=true", conn_str)
-
-    def test_contains_required_fields(self):
-        conn_str = get_connection_string()
-        self.assertIn("host=", conn_str)
-        self.assertIn("port=", conn_str)
-        self.assertIn("dbname=", conn_str)
-        self.assertIn("user=", conn_str)
+_DSN = "host=localhost port=5433 dbname=yugabyte user=yugabyte password=yugabyte"
 
 
 class TestTuneSession(unittest.TestCase):
@@ -41,7 +30,7 @@ class TestSmartConnectionPool(unittest.TestCase):
         mock_pool_instance = MagicMock()
         mock_pool_cls.return_value = mock_pool_instance
 
-        sp = SmartConnectionPool(minconn=2, maxconn=4)
+        sp = SmartConnectionPool(dsn=_DSN, minconn=2, maxconn=4)
 
         mock_pool_cls.assert_called_once()
         self.assertEqual(mock_pool_instance, sp.pool)

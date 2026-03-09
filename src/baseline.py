@@ -1,25 +1,16 @@
 import time
 import logging
 import psycopg2
-from db_utils import get_connection_string, tune_session
+from db_utils import tune_session
 
 logger = logging.getLogger(__name__)
 
-# 8 MB read buffer for file I/O
 _READ_BUFFER_SIZE = 8 * 1024 * 1024
 
 
 def _calc_metrics(inserted_rows: int, duration: float, label: str = "Baseline") -> dict:
-    """
-    Derive QPS, TPS, Latency (single bulk op treated as 1 transaction), and IOPS.
-    For a single-connection bulk COPY:
-      - TPS  = 1  (one commit)
-      - QPS  = rows / duration  (rows effectively queued per second)
-      - IOPS = rows / duration  (each row = 1 logical write I/O)
-      - Latency = duration in ms (wall-clock of the single txn)
-    """
     qps = inserted_rows / duration if duration > 0 else 0.0
-    tps = 1.0 / duration if duration > 0 else 0.0          # 1 txn total
+    tps = 1.0 / duration if duration > 0 else 0.0
     iops = inserted_rows / duration if duration > 0 else 0.0
     latency_ms = duration * 1000.0
 
@@ -42,21 +33,21 @@ def _calc_metrics(inserted_rows: int, duration: float, label: str = "Baseline") 
     }
 
 
-def run_baseline(file_path: str) -> dict:
-    """Executes a standard single-threaded COPY command and reports metrics."""
+def run_baseline(file_path: str, dsn: str, copy_sql: str) -> dict:
+    """
+    Executes a standard single-threaded COPY command and reports metrics.
+    Both the DSN and COPY statement are sourced from config.yaml at runtime.
+    """
     logger.info("Starting baseline single-threaded COPY...")
 
     start_time = time.time()
 
     try:
-        with psycopg2.connect(get_connection_string()) as conn:
+        with psycopg2.connect(dsn) as conn:
             tune_session(conn)
             with conn.cursor() as cur:
                 with open(file_path, "r", buffering=_READ_BUFFER_SIZE) as f:
-                    cur.copy_expert(
-                        "COPY test_data FROM STDIN WITH (FORMAT CSV)", f,
-                        size=_READ_BUFFER_SIZE,
-                    )
+                    cur.copy_expert(copy_sql, f, size=_READ_BUFFER_SIZE)
                 inserted_rows = cur.rowcount
             conn.commit()
     except Exception as e:

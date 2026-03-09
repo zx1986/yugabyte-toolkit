@@ -5,6 +5,7 @@ FILE ?= bench.csv
 ROWS ?= 1000000
 WORKERS ?= 20
 DURATION ?= 60
+CONFIG ?= config.yaml
 
 help:
 	@echo "YugabyteDB Benchmark Tool Makefile"
@@ -32,6 +33,7 @@ help:
 	@echo "  ROWS     (default: 1000000)"
 	@echo "  WORKERS  (default: 20)"
 	@echo "  DURATION (default: 60)"
+	@echo "  CONFIG   (default: config.yaml)"
 
 db-up:
 	docker-compose up -d
@@ -43,19 +45,19 @@ db-down:
 	docker-compose down -v
 
 generate:
-	python src/main.py --mode single --file $(FILE) --generate $(ROWS) --no-init
+	python src/main.py --config $(CONFIG) --mode single --file $(FILE) --generate $(ROWS) --no-init
 
 write-single:
-	python src/main.py --mode single --file $(FILE)
+	python src/main.py --config $(CONFIG) --mode single --file $(FILE)
 
 write-parallel:
-	python src/main.py --mode parallel --file $(FILE) --workers $(WORKERS)
+	python src/main.py --config $(CONFIG) --mode parallel --file $(FILE) --workers $(WORKERS)
 
 read-standard:
-	python src/main.py --mode read_standard --file $(FILE) --workers $(WORKERS) --duration $(DURATION) --no-init
+	python src/main.py --config $(CONFIG) --mode read_standard --file $(FILE) --workers $(WORKERS) --duration $(DURATION) --no-init
 
 read-optimized:
-	python src/main.py --mode read_optimized --file $(FILE) --workers $(WORKERS) --duration $(DURATION) --no-init
+	python src/main.py --config $(CONFIG) --mode read_optimized --file $(FILE) --workers $(WORKERS) --duration $(DURATION) --no-init
 
 all-tests: db-up generate write-parallel read-standard read-optimized
 	@echo "All benchmark tests completed successfully."

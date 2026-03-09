@@ -9,18 +9,15 @@ from db_utils import SmartConnectionPool, tune_session
 logger = logging.getLogger(__name__)
 
 
-def _copy_chunk(raw_lines: list[str], pool: SmartConnectionPool) -> tuple[int, float]:
-    """
-    Copy a chunk of raw CSV lines into the database via COPY FROM STDIN.
-    Returns (rows_inserted, latency_seconds).
-    """
+def _copy_chunk(raw_lines: list[str], pool: SmartConnectionPool, copy_sql: str) -> tuple[int, float]:
+    """Copy a chunk of raw CSV lines into the database via COPY FROM STDIN."""
     conn = pool.getconn()
     t0 = time.perf_counter()
     try:
         tune_session(conn)
         buf = io.StringIO("".join(raw_lines))
         with conn.cursor() as cur:
-            cur.copy_expert("COPY test_data FROM STDIN WITH (FORMAT CSV)", buf)
+            cur.copy_expert(copy_sql, buf)
             inserted = cur.rowcount
         conn.commit()
     except Exception:
@@ -31,19 +28,16 @@ def _copy_chunk(raw_lines: list[str], pool: SmartConnectionPool) -> tuple[int, f
     return inserted, time.perf_counter() - t0
 
 
-def run_parallel(file_path: str, workers: int, chunk_size: int) -> dict:
+def run_parallel(file_path: str, dsn: str, copy_sql: str, workers: int, chunk_size: int) -> dict:
     """
-    Stream-reads a CSV file and distributes raw-line chunks to a thread pool
-    for parallel COPY into YugabyteDB. Reports QPS, TPS, IOPS, and per-chunk
-    latency statistics (avg, p95, p99).
+    Stream-reads a CSV file and distributes chunks to a thread pool for parallel COPY.
+    Both the DSN and COPY statement are sourced from config.yaml at runtime.
     """
     logger.info(
-        "Starting parallel COPY with %d workers, chunk_size=%d ...",
-        workers, chunk_size,
+        "Starting parallel COPY with %d workers, chunk_size=%d ...", workers, chunk_size,
     )
 
-    conn_pool = SmartConnectionPool(minconn=workers, maxconn=workers)
-
+    conn_pool = SmartConnectionPool(dsn=dsn, minconn=workers, maxconn=workers)
     start_time = time.time()
     total_inserted = 0
     chunk_latencies: list[float] = []
@@ -52,14 +46,12 @@ def run_parallel(file_path: str, workers: int, chunk_size: int) -> dict:
         with open(file_path, "r") as fh:
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = []
-
                 while True:
                     chunk = list(islice(fh, chunk_size))
                     if not chunk:
                         break
-                    futures.append(executor.submit(_copy_chunk, chunk, conn_pool))
+                    futures.append(executor.submit(_copy_chunk, chunk, conn_pool, copy_sql))
 
-                    # Bounded submission to prevent unbounded memory growth
                     if len(futures) >= workers * 2:
                         done = [f for f in futures if f.done()]
                         for f in done:
@@ -72,7 +64,6 @@ def run_parallel(file_path: str, workers: int, chunk_size: int) -> dict:
                     rows, lat = f.result()
                     total_inserted += rows
                     chunk_latencies.append(lat)
-
     except Exception as e:
         logger.error("Parallel import failed: %s", e)
         raise
@@ -91,7 +82,7 @@ def run_parallel(file_path: str, workers: int, chunk_size: int) -> dict:
         lat_avg_ms = lat_p95_ms = lat_p99_ms = 0.0
 
     qps = total_inserted / duration if duration > 0 else 0.0
-    tps = num_chunks / duration if duration > 0 else 0.0   # 1 txn per chunk
+    tps = num_chunks / duration if duration > 0 else 0.0
     iops = total_inserted / duration if duration > 0 else 0.0
 
     logger.info("--- Parallel Mode Results ---")

@@ -4,50 +4,44 @@ import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from db_utils import SmartConnectionPool
+from config_loader import generate_query_params
 
 logger = logging.getLogger(__name__)
 
-_RANGE_QUERY_STANDARD = """
-SELECT id, name, email, score, created_at
-FROM test_data
-WHERE score BETWEEN %s AND %s
-ORDER BY score DESC, name ASC
-LIMIT 100;
-"""
 
-_RANGE_QUERY_OPTIMIZED = """
-SELECT id, name, email, score, created_at
-FROM test_data_optimized
-WHERE score BETWEEN %s AND %s
-ORDER BY score DESC, name ASC
-LIMIT 100;
-"""
-
-
-def _execute_query(pool: SmartConnectionPool, query: str, latencies: list[float]) -> int:
-    """Execute a single range query, appending latency to the shared list."""
-    import random
-    lo = random.uniform(0.0, 50.0)
-    hi = lo + random.uniform(5.0, 50.0)
-
+def _execute_query(
+    pool: SmartConnectionPool,
+    sql: str,
+    parameters_spec: list[dict],
+    latencies: list[float],
+) -> int:
+    """Execute a single configured range query and record its latency."""
+    params = generate_query_params(parameters_spec)
     conn = pool.getconn()
     try:
         t0 = time.perf_counter()
         with conn.cursor() as cur:
-            cur.execute(query, (lo, hi))
+            cur.execute(sql, params)
             rows = cur.rowcount
-        latencies.append((time.perf_counter() - t0) * 1000.0)  # ms
+        latencies.append((time.perf_counter() - t0) * 1000.0)
         return rows
     finally:
         pool.putconn(conn)
 
 
-def _run_read_bench(query: str, workers: int, duration_sec: int, label: str):
+def _run_read_bench(
+    dsn: str,
+    sql: str,
+    parameters_spec: list[dict],
+    workers: int,
+    duration_sec: int,
+    label: str,
+) -> dict:
     """
-    Drive concurrent read queries for `duration_sec` seconds and report metrics.
-    Uses a thread-pool with `workers` concurrent clients.
+    Drive concurrent read queries for `duration_sec` seconds using a pool of
+    `workers` concurrent clients. The SQL and parameters are fully config-driven.
     """
-    pool = SmartConnectionPool(minconn=workers, maxconn=workers)
+    conn_pool = SmartConnectionPool(dsn=dsn, minconn=workers, maxconn=workers)
     latencies: list[float] = []
     total_queries = 0
     start = time.time()
@@ -57,23 +51,23 @@ def _run_read_bench(query: str, workers: int, duration_sec: int, label: str):
         with ThreadPoolExecutor(max_workers=workers) as executor:
             pending: set = set()
             while time.time() < deadline:
-                # Keep the pool saturated
                 while len(pending) < workers * 2 and time.time() < deadline:
-                    f = executor.submit(_execute_query, pool, query, latencies)
+                    f = executor.submit(
+                        _execute_query, conn_pool, sql, parameters_spec, latencies
+                    )
                     pending.add(f)
 
                 done = {f for f in pending if f.done()}
                 for f in done:
-                    f.result()  # raises on error
+                    f.result()
                     total_queries += 1
                     pending -= {f}
 
-            # Drain remaining
             for f in as_completed(pending):
                 f.result()
                 total_queries += 1
     finally:
-        pool.closeall()
+        conn_pool.closeall()
 
     elapsed = time.time() - start
 
@@ -86,9 +80,7 @@ def _run_read_bench(query: str, workers: int, duration_sec: int, label: str):
         avg_ms = p95_ms = p99_ms = 0.0
 
     qps = total_queries / elapsed if elapsed > 0 else 0.0
-    # TPS = 1 query = 1 auto-commit txn
     tps = qps
-    # IOPS proxy: total rows read / elapsed (each query returns up to 100 rows)
     iops = (total_queries * 100) / elapsed if elapsed > 0 else 0.0
 
     logger.info("--- %s Read Results ---", label)
@@ -115,11 +107,11 @@ def _run_read_bench(query: str, workers: int, duration_sec: int, label: str):
     }
 
 
-def run_standard_read(workers: int, duration_sec: int):
-    """Benchmark standard range queries against the unoptimized test_data table."""
-    return _run_read_bench(_RANGE_QUERY_STANDARD, workers, duration_sec, "Standard Read")
+def run_standard_read(dsn: str, sql: str, parameters_spec: list[dict], workers: int, duration_sec: int) -> dict:
+    """Benchmark standard range queries using config-driven SQL."""
+    return _run_read_bench(dsn, sql, parameters_spec, workers, duration_sec, "Standard Read")
 
 
-def run_optimized_read(workers: int, duration_sec: int):
-    """Benchmark optimized range queries against test_data_optimized (covering index)."""
-    return _run_read_bench(_RANGE_QUERY_OPTIMIZED, workers, duration_sec, "Optimized Read")
+def run_optimized_read(dsn: str, sql: str, parameters_spec: list[dict], workers: int, duration_sec: int) -> dict:
+    """Benchmark optimized range queries using config-driven SQL (covering index)."""
+    return _run_read_bench(dsn, sql, parameters_spec, workers, duration_sec, "Optimized Read")

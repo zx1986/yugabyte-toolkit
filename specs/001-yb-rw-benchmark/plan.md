@@ -1,106 +1,69 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: Configuration-Driven YugabyteDB Benchmark Tool
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
+**Branch**: `001-yb-rw-benchmark` | **Date**: 2026-03-08 | **Spec**: [spec.md](./spec.md)
+**Input**: Feature specification from `specs/001-yb-rw-benchmark/spec.md`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Refactor the existing YugabyteDB CSV benchmark tool to be entirely configuration-driven via a YAML file (`config.yaml`). This decouples the database connection strings, table schemas (standard vs. optimized), data generation constraints, and read/write SQL queries from the Python logic, allowing users to benchmark varying database designs without altering code. The explicitly required `RANGE_QUERY_OPTIMIZED` layout will be maintained as the default configuration.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Python 3.11  
+**Primary Dependencies**: `psycopg2-yugabytedb-binary`, `argparse`, `PyYAML`, YugabyteDB Docker images.  
+**Storage**: Local Docker Compose (1 master, 3 tservers) limited to 3GiB storage.  
+**Testing**: Docker Compose local run and manual script validation against the new YAML parser.  
+**Target Platform**: Local developer workstation (macOS).  
+**Project Type**: CLI Data Benchmarking Tool.  
+**Performance Goals**: Support high-throughput parsing and execution; the YAML loading overhead must only occur once at startup.  
+**Constraints**: Must use Python standard library threads for parallel copy, and standard `psycopg2` driver logic. Logic must be generic enough to execute arbitrary SQL read queries defined in YAML.
 
 ## Constitution Check
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-- [ ] **I. CLI First**: Does it strictly expose configuration via CLI arguments without hardcoded configs?
-- [ ] **II. Performance Observability**: Will the change emit metrics to reliably determine its benchmark performance?
-- [ ] **III. Reliable Reproducibility**: Does it have reproducible setup, test generation, and database clearing?
-- [ ] **IV. Safe Concurrency**: Are connections pooled and concurrency safely bounded?
+- [x] **I. CLI First**: Configuration strictly via CLI arguments, utilizing `--config` to point to the YAML definition.
+- [x] **II. Performance Observability**: The tool will continue to emit distinct read/write metrics (QPS, TPS, Latency, IOPS).
+- [x] **III. Reliable Reproducibility**: Setup includes clearing data and explicit schema initialization driven dynamically by the YAML config.
+- [x] **IV. Safe Concurrency**: Connection pool limits dictate max concurrency for the dynamic queries via bounded `ThreadPoolExecutor`.
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+specs/001-yb-rw-benchmark/
+├── plan.md              # This file
+├── research.md          # Technical decisions on YAML layout
+├── data-model.md        # YAML Data model expectations
+├── contracts/cli.md     # CLI argument contract
+├── contracts/config.md  # YAML structure contract
+└── quickstart.md        # Usage instructions
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
+/
+├── docker-compose.yaml  
+├── config.yaml          # [NEW] Contains DB connection, schemas, and query definitions
 ├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+│   ├── main.py          # [MODIFY] Parse YAML config and pass context to runners
+│   ├── config_loader.py # [NEW] Parses and validates the YAML configuration
+│   ├── db_utils.py      # [MODIFY] Dynamic schema init based on YAML config loops
+│   ├── baseline.py      # [MODIFY] Decoupled COPY statement
+│   ├── parallel.py      # [MODIFY] Decoupled COPY statement
+│   ├── read_bench.py    # [MODIFY] Execute dynamic read SQL from config matching parameters
+│   └── test_data_generator.py # [MODIFY] Generate CSV dynamically based on YAML schema column types
+└── Makefile             # [MODIFY] Pass the config argument
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: Retaining the flat Python module layout in `src/`, introducing `config_loader.py` to handle `PyYAML` ingestion and pass a parsed dict to the existing workers. `config.yaml` sits at the repo root.
 
-## Complexity Tracking
+## Verification Plan
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
-
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+### Manual Verification
+1. Boot the YugabyteDB cluster: `make db-up`
+2. Create/update the `config.yaml` file to alter a column name (e.g., `user_email` instead of `email`).
+3. Run data generation: `make generate` -> Verify the CSV has the updated column data.
+4. Execute benchmark sequence: `make all-tests`
+5. Verify output metrics correctly output values without SQL hardcoding errors, proving the Python code successfully read the YAML overrides.

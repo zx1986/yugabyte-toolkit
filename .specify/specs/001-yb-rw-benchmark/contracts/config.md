@@ -1,0 +1,108 @@
+# Configuration Contract: config.yaml
+
+## Purpose
+The `config.yaml` file completely decouples the benchmarking tool's logic from specific database structures, schemas, and queries. The Python application logic will parse this file to execute the appropriate benchmarking sequences.
+
+## Schema Structure
+
+```yaml
+version: "1.0"
+
+database:
+  connection: "host=localhost port=5433 dbname=yugabyte user=yugabyte password=yugabyte options='-c load_balance=true'"
+
+schema:
+  tables:
+    standard:
+      name: "test_data"
+      ddl: >
+        CREATE TABLE IF NOT EXISTS test_data (
+            id int,
+            name varchar,
+            email varchar,
+            score float,
+            created_at timestamp,
+            PRIMARY KEY(id ASC)
+        );
+      drop_sql: "DROP TABLE IF EXISTS test_data;"
+      truncate_sql: "TRUNCATE TABLE test_data;"
+
+    optimized:
+      name: "test_data_optimized"
+      ddl: >
+        CREATE TABLE IF NOT EXISTS test_data_optimized (
+            id int,
+            name varchar,
+            email varchar,
+            score float,
+            created_at timestamp,
+            PRIMARY KEY(id ASC)
+        );
+      index_ddl: >
+        CREATE INDEX IF NOT EXISTS idx_score_name
+        ON test_data_optimized (score DESC, name ASC)
+        INCLUDE (email, created_at);
+      drop_sql: "DROP TABLE IF EXISTS test_data_optimized;"
+      populate_sql: >
+        INSERT INTO test_data_optimized
+        SELECT id, name, email, score, created_at FROM test_data;
+
+queries:
+  write:
+    copy_sql: "COPY test_data FROM STDIN WITH (FORMAT CSV)"
+  
+  read_standard:
+    sql: >
+      SELECT id, name, email, score, created_at
+      FROM test_data
+      WHERE score BETWEEN %s AND %s
+      ORDER BY score DESC, name ASC
+      LIMIT 100;
+    # Denotes the runtime parameters the Python worker needs to generate for the SQL execution
+    parameters:
+      - type: "float_range"
+        min: 0.0
+        max: 50.0
+        range_size_min: 5.0
+        range_size_max: 50.0
+
+  read_optimized:
+    sql: >
+      SELECT id, name, email, score, created_at
+      FROM test_data_optimized
+      WHERE score BETWEEN %s AND %s
+      ORDER BY score DESC, name ASC
+      LIMIT 100;
+    parameters:
+      - type: "float_range"
+        min: 0.0
+        max: 50.0
+        range_size_min: 5.0
+        range_size_max: 50.0
+
+data_generation:
+  # Instructs the test_data_generator on the CSV layout required for the COPY command
+  format: "csv"
+  columns:
+    - name: "id"
+      type: "sequential_int"
+    - name: "name"
+      type: "random_string"
+      length: 15
+    - name: "email"
+      type: "composite"
+      pattern: "{name}@example.com"
+    - name: "score"
+      type: "random_float"
+      min: 0.0
+      max: 100.0
+    - name: "created_at"
+      type: "random_timestamp"
+      days_back: 365
+```
+
+## Parsing Rules
+1. **DB Setup**: The system drops, creates, and indexes tables iteratively based on the `schema` block.
+2. **Benchmark Execution**: 
+    - Write benchmarks execute the `queries.write.copy_sql` using the generated file.
+    - Read benchmarks execute `queries.read_standard` or `queries.read_optimized` and dynamically map the `parameters` list into the `%s` placeholders at runtime.

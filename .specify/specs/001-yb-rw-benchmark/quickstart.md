@@ -1,48 +1,62 @@
-# Quickstart: YugabyteDB Read/Write Benchmark
+# Quickstart: Configuration-Driven Benchmark Tool
 
-This tool evaluates the performance of different write strategies (Standard `pg_copy` vs YugabyteDB Smart Driver parallel) and read strategies (standard queries vs Optimized Schema Queries) against a local YugabyteDB cluster.
+This guide walks through setting up the YugabyteDB read/write benchmark using the new YAML-decoupled configuration.
 
-## 1. Prerequisites
-- Docker & Docker Compose installed.
-- Python 3.11+.
+## 1. Setup
 
-## 2. Environment Setup
-
-Boot the customized 3GiB limited 1-node master, 3-node tserver cluster:
+Start the local YugabyteDB 1-master, 3-tserver cluster:
 
 ```bash
-docker-compose up -d
+make db-up
 ```
-*(Wait 10-15 seconds for the cluster logic and masters to initialize)*
 
-Install the required Python binding (YugabyteDB Smart Driver):
+Install the dependencies within a virtual environment:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt # or manually: pip install psycopg2-yugabytedb-binary>=2.9.9
+pip install psycopg2-yugabytedb-binary PyYAML
 ```
 
-## 3. Run Benchmarks
+## 2. Review the Configuration
 
-### Generate Data + Standard Write Benchmark
+By default, the tool expects a `config.yaml` file in the root directory. This file dictates exactly what schemas are created, what CSV generation looks like, and what SQL statements are executed.
+
+Create a default `config.yaml` using the template specified in `contracts/config.md`.
+
+## 3. Generate Data & Standard Write
+
+Generate 1 million rows of mock data (as defined in `config.yaml`) and benchmark standard `pg_copy`:
+
 ```bash
-# Generates 5,000,000 rows (~300MB depending on strings) and imports using a single thread
-python src/main.py --mode single --file test_data.csv --generate 5000000
+# Uses Makefile abstraction which implicitly passes --config config.yaml
+make generate ROWS=1000000
+make write-single
 ```
 
-### Parallel Write Benchmark
+## 4. Parallel Write Benchmark
+
+To test parallel inserts utilizing the YugabyteDB Smart Driver Connection Pool:
+
 ```bash
-# Drops the table, recreates it, and imports using 20 concurrent threads
-python src/main.py --mode parallel --file test_data.csv --workers 20
+# Using 20 concurrent threads
+make write-parallel WORKERS=20
 ```
 
-### Read Benchmarks
-Run range query reads against the data for 60 seconds:
+## 5. Read Benchmarks
+
+Ensure data is populated. Run the standard unoptimized range queries:
+
 ```bash
-# Standard table structure read test
-python src/main.py --mode read_standard --file test_data.csv --no-init --duration 60
-
-# YugabyteDB Optimized index structure read test
-python src/main.py --mode read_optimized --file test_data.csv --no-init --duration 60
+make read-standard DURATION=60 WORKERS=10
 ```
+
+Run the optimized range queries (using the explicitly defined Covering Indexes inside `config.yaml`):
+
+```bash
+make read-optimized DURATION=60 WORKERS=10
+```
+
+## Metrics Output
+
+All modes will output clearly defined QPS, TPS, IOPS, and Latency (Avg, P95, P99) immediately upon completion.

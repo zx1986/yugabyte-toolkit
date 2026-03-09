@@ -2,12 +2,19 @@ import argparse
 import logging
 import sys
 
+from config_loader import (
+    load_config,
+    get_connection_string,
+    get_write_copy_sql,
+    get_read_query,
+    get_schema_tables,
+    get_data_generation_columns,
+)
 from test_data_generator import generate_test_data
 from db_utils import (
     init_db_schema,
-    clear_test_data,
+    clear_standard_data,
     populate_optimized_from_standard,
-    init_optimized_schema_only,
 )
 from baseline import run_baseline
 from parallel import run_parallel
@@ -24,6 +31,10 @@ def setup_logging():
 
 def main():
     parser = argparse.ArgumentParser(description="YugabyteDB Read/Write Benchmark Tool")
+    parser.add_argument(
+        '--config', type=str, default='config.yaml',
+        help="Path to the YAML configuration file (default: config.yaml)",
+    )
     parser.add_argument(
         '--mode',
         choices=['single', 'parallel', 'read_standard', 'read_optimized'],
@@ -57,32 +68,39 @@ def main():
 
     logger = logging.getLogger("MAIN")
 
+    # Load everything from the YAML config
+    cfg = load_config(args.config)
+    dsn = get_connection_string(cfg)
+    tables = get_schema_tables(cfg)
+    columns = get_data_generation_columns(cfg)
+
     if args.generate is not None:
-        generate_test_data(args.file, args.generate)
+        generate_test_data(args.file, args.generate, columns)
 
     # Schema initialisation
     if not args.no_init:
-        init_db_schema()
+        init_db_schema(dsn, tables)
     else:
-        clear_test_data()
+        clear_standard_data(dsn, tables)
 
     logger.info("Running in '%s' mode with file '%s'", args.mode, args.file)
 
     if args.mode == 'single':
-        run_baseline(args.file)
+        copy_sql = get_write_copy_sql(cfg)
+        run_baseline(args.file, dsn, copy_sql)
 
     elif args.mode == 'parallel':
-        run_parallel(args.file, args.workers, args.chunk_size)
+        copy_sql = get_write_copy_sql(cfg)
+        run_parallel(args.file, dsn, copy_sql, args.workers, args.chunk_size)
 
     elif args.mode == 'read_standard':
-        # Ensure standard table is populated
-        run_standard_read(args.workers, args.duration)
+        sql, params_spec = get_read_query(cfg, 'read_standard')
+        run_standard_read(dsn, sql, params_spec, args.workers, args.duration)
 
     elif args.mode == 'read_optimized':
-        # Populate the covering-index table from the base table, then benchmark
-        init_optimized_schema_only()
-        populate_optimized_from_standard()
-        run_optimized_read(args.workers, args.duration)
+        populate_optimized_from_standard(dsn, tables)
+        sql, params_spec = get_read_query(cfg, 'read_optimized')
+        run_optimized_read(dsn, sql, params_spec, args.workers, args.duration)
 
 
 if __name__ == "__main__":

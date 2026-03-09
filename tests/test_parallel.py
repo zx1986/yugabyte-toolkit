@@ -2,11 +2,14 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from parallel import _copy_chunk, run_parallel
+
+_DSN = "host=localhost port=5433 dbname=yugabyte user=yugabyte password=yugabyte"
+_COPY_SQL = "COPY test_data FROM STDIN WITH (FORMAT CSV)"
 
 
 class TestCopyChunk(unittest.TestCase):
@@ -24,9 +27,10 @@ class TestCopyChunk(unittest.TestCase):
         mock_pool.getconn.return_value = mock_conn
 
         raw_lines = ["1,a,a@x.com,1.0,2025-01-01 00:00:00\n"] * 50
-        result = _copy_chunk(raw_lines, mock_pool)
+        rows, latency = _copy_chunk(raw_lines, mock_pool, _COPY_SQL)
 
-        self.assertEqual(result, 50)
+        self.assertEqual(rows, 50)
+        self.assertGreaterEqual(latency, 0)
         mock_cursor.copy_expert.assert_called_once()
         mock_conn.commit.assert_called_once()
         mock_pool.putconn.assert_called_once_with(mock_conn)
@@ -45,7 +49,7 @@ class TestCopyChunk(unittest.TestCase):
         mock_pool.getconn.return_value = mock_conn
 
         with self.assertRaises(Exception):
-            _copy_chunk(["1,a,a@x.com,1.0,2025-01-01\n"], mock_pool)
+            _copy_chunk(["1,a,a@x.com,1.0,2025-01-01\n"], mock_pool, _COPY_SQL)
 
         mock_conn.rollback.assert_called_once()
         mock_pool.putconn.assert_called_once_with(mock_conn)
@@ -61,8 +65,6 @@ class TestRunParallel(unittest.TestCase):
 
         mock_conn = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
 
         mock_pool = MagicMock()
         mock_pool.getconn.return_value = mock_conn
@@ -74,9 +76,11 @@ class TestRunParallel(unittest.TestCase):
             tmp_path = f.name
 
         try:
-            total, duration, rps = run_parallel(tmp_path, workers=2, chunk_size=5)
-            self.assertEqual(total, 10)  # 2 chunks × 5 rows
-            self.assertGreater(duration, 0)
+            result = run_parallel(tmp_path, _DSN, _COPY_SQL, workers=2, chunk_size=5)
+            self.assertIn("rows_inserted", result)
+            self.assertIn("qps", result)
+            self.assertIn("latency_avg_ms", result)
+            self.assertGreater(result["duration_sec"], 0)
         finally:
             os.unlink(tmp_path)
 
