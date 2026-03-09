@@ -1,101 +1,88 @@
 services:
-  yb-master:
-    image: yugabytedb/yugabyte:latest
-    container_name: yb-master
-    command:
-      - "yb-master"
-      - "--master_addresses=yb-master:7100"
-      - "--replication_factor=3"
-      - "--fs_data_dirs=/mnt/data"
-    volumes:
-      - yb-master-data:/mnt/data
+  yb-node1:
+    image: yugabytedb/yugabyte:2024.2.8.0-b85
+    container_name: yb-node1
+    hostname: yb-node1
     ports:
-      - "7000:7000"
+      - "5433:5433"   # YSQL
+      - "7000:7000"   # Master UI
+      - "9000:9000"   # TServer UI
+    command:
+      - bash
+      - -c
+      - |
+        bin/yugabyted start \
+          --base_dir=/home/yugabyte/yb_data \
+          --advertise_address=yb-node1 \
+          --cloud_location=cloud.region.zone1 \
+          --fault_tolerance=zone \
+          --daemon=false
+    volumes:
+      - yb_data1:/home/yugabyte/yb_data
+    networks:
+      - yb-net
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2G
 
-  yb-tserver-1:
-    image: yugabytedb/yugabyte:latest
-    container_name: yb-tserver-1
+  yb-node2:
+    image: yugabytedb/yugabyte:2024.2.8.0-b85
+    container_name: yb-node2
+    hostname: yb-node2
     command:
-      - "yb-tserver"
-      - "--tserver_master_addrs=yb-master:7100"
-      - "--fs_data_dirs=/mnt/data"
-      - "--memory_limit_hard_bytes=536870912"
+      - bash
+      - -c
+      - |
+        bin/yugabyted start \
+          --base_dir=/home/yugabyte/yb_data \
+          --advertise_address=yb-node2 \
+          --join=yb-node1 \
+          --cloud_location=cloud.region.zone2 \
+          --fault_tolerance=zone \
+          --daemon=false
     volumes:
-      - yb-tserver1-data:/mnt/data
-    ports:
-      - "5433:5433"
-      - "9000:9000"
+      - yb_data2:/home/yugabyte/yb_data
     depends_on:
-      - yb-master
+      - yb-node1
+    networks:
+      - yb-net
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2G
 
-  yb-tserver-2:
-    image: yugabytedb/yugabyte:latest
-    container_name: yb-tserver-2
+  yb-node3:
+    image: yugabytedb/yugabyte:2024.2.8.0-b85
+    container_name: yb-node3
+    hostname: yb-node3
     command:
-      - "yb-tserver"
-      - "--tserver_master_addrs=yb-master:7100"
-      - "--fs_data_dirs=/mnt/data"
-      - "--memory_limit_hard_bytes=536870912"
+      - bash
+      - -c
+      - |
+        bin/yugabyted start \
+          --base_dir=/home/yugabyte/yb_data \
+          --advertise_address=yb-node3 \
+          --join=yb-node1 \
+          --cloud_location=cloud.region.zone3 \
+          --fault_tolerance=zone \
+          --daemon=false
     volumes:
-      - yb-tserver2-data:/mnt/data
-    ports:
-      - "5434:5433"
+      - yb_data3:/home/yugabyte/yb_data
     depends_on:
-      - yb-master
+      - yb-node1
+    networks:
+      - yb-net
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2G
 
-  yb-tserver-3:
-    image: yugabytedb/yugabyte:latest
-    container_name: yb-tserver-3
-    command:
-      - "yb-tserver"
-      - "--tserver_master_addrs=yb-master:7100"
-      - "--fs_data_dirs=/mnt/data"
-      - "--memory_limit_hard_bytes=536870912"
-    volumes:
-      - yb-tserver3-data:/mnt/data
-    ports:
-      - "5435:5433"
-    depends_on:
-      - yb-master
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+networks:
+  yb-net:
+    driver: bridge
 
 volumes:
-  yb-master-data:
-    driver: local
-    driver_opts:
-      o: size=512m
-      type: tmpfs
-      device: tmpfs
-  yb-tserver1-data:
-    driver: local
-    driver_opts:
-      o: size=1g
-      type: tmpfs
-      device: tmpfs
-  yb-tserver2-data:
-    driver: local
-    driver_opts:
-      o: size=1g
-      type: tmpfs
-      device: tmpfs
-  yb-tserver3-data:
-    driver: local
-    driver_opts:
-      o: size=1g
-      type: tmpfs
-      device: tmpfs
+  yb_data1:
+  yb_data2:
+  yb_data3:
