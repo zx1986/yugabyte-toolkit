@@ -21,14 +21,16 @@
 *   呼叫 `read_namespaced_pod_log` 且帶入引數 `stream=True`。
 *   利用平行處理（`ThreadPoolExecutor` 或 `asyncio`），同時對目標的 3 個 `yb-tserver` Pod 建立獨立連線讀取流。
 *   **過濾邏輯**：逐行讀取 stdout，檢查該行字串是否包含發送的 `trace_id`。
-*   **零緩存寫入**：符合條件的日誌直接 `append` (\n) 寫入 PVC 指定的文件路徑，嚴格控制記憶體消耗，避免 OOM。
+*   **零緩存寫入與統一時間軸 (UTC Timestamp)**：
+    *   符合條件的日誌會直接 `append`寫入 PVC 指定的文件路徑，嚴格控制記憶體消耗。
+    *   **在過濾整理並輸出的每筆系統日誌紀錄，以及腳本執行的每個動作 (Action) 階段，都必須強制添加標準的 UTC 時區 Timestamp (時間戳)**，以確保未來在分析跨節點的分散式事件時，擁有一致的時間序列比對基準。
 
 ## 4. Workflow (執行流程)
-1.  **啟動與初始化**：載入 Kube config、初始化 K8s Client 與 DB 連線，開啟 PVC 日誌檔預備寫入。
-2.  **建立監聽**：啟動背景 Thread/Task，開始串流 TServer 日誌。
-3.  **觸發寫入**：對 YugabyteDB 發送帶有 `trace_id` 的 `INSERT` 操作。
+1.  **啟動與初始化**：載入 Kube config、初始化 K8s Client 與 DB 連線。(此動作印出 `[UTC Time] Initializing...`)
+2.  **建立監聽**：啟動背景 Thread/Task，開始串流 TServer 日誌。(此動作印出 `[UTC Time] Started log streams for pods...`)
+3.  **觸發寫入**：對 YugabyteDB 發送帶有 `trace_id` 的 `INSERT` 操作。(此動作印出 `[UTC Time] Executing INSERT with trace_id...`)
 4.  **延遲等待**：休眠 5 ~ 10 秒，等待背景的非同步機制（如 Raft 同步或 MemTable Flush 日誌）落地並被 K8s 串流捕捉。
-5.  **結束與歸檔**：中斷串流連線，關閉檔案與連線，印出成功訊息後結束程序。
+5.  **結束與歸檔**：中斷串流連線，關閉檔案與連線，印出成功結束訊息。(此動作印出 `[UTC Time] Job completed...`)
 
 ## 5. Security & Constraints (安全性與約束)
 *   **Read-Only 擷取 (不變更系統設定)**：腳本完全不干涉 YugabyteDB 的日誌配置（不去開啟 `vmodule` 開關）。初期先於預設的非 Debug 模式下實踐日誌配對與串留截取機制，確立穩定性再考慮後續外部調整。
@@ -36,4 +38,4 @@
 
 ## 6. Testing Strategy (測試策略)
 *   使用 `kubectl create -f job.yaml` 觸發執行。
-*   待 Job State 變更為 Completed 後，使用其他容器（或掛載同一個 PVC）讀取該日誌檔案，驗證 `trace_id` 是否成功撈出預期的寫入日誌。
+*   待 Job State 變更為 Completed 後，使用其他容器（或掛載同一個 PVC）讀取該日誌檔案，驗證 `trace_id` 是否成功撈出預期的寫入日誌，且每筆資料皆清晰標註了 UTC Timestamp。
