@@ -1,0 +1,19 @@
+name: "Standard Insert Write Path"
+description: "Verifies the standard Raft write behavior in YugabyteDB"
+stages:
+  - id: "ysql_parse"
+    name: "YSQL Parser and Planner"
+    pattern: "statement: INSERT INTO test_table"
+    required: true
+  - id: "raft_append"
+    name: "Leader Appends to WAL"
+    pattern: "Appending to Raft Log"
+    required: true
+  - id: "raft_replicate"
+    name: "Leader Sends UpdateConsensus"
+    pattern: "Sending UpdateConsensus"
+    required: true
+  - id: "memtable_apply"
+    name: "Apply to MemTable (Committed)"
+    pattern: "Applying operation"
+    required: true

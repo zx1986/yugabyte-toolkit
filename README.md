@@ -96,3 +96,46 @@ For the Read Benchmark (`read_standard` vs `read_optimized`), the following inde
 | `read_optimized` | `test_data_optimized` | Covering: `score DESC, name ASC INCLUDE (email, created_at)` |
 
 *The optimized index avoids expensive double-lookups out to the main table heap and completely eliminates in-memory sorts by physically matching the query's `ORDER BY score DESC, name ASC` clause constraint, while covering all projected columns.*
+
+---
+
+## Kubernetes Write Path Tracing & Verification (Current Branch `yb-inspector` Features)
+
+This branch introduces an automated tool to trace a write query (`INSERT`) from the YSQL engine down through DocDB, the Raft consensus group, and finally to the MemTable. It runs inside a Kubernetes cluster, collects distributed replica logs, filters them by a unique trace ID, and verifies that the write path matches expected execution stages.
+
+### Core Components
+
+*   **Tracer Client & Collector** ([trace_db.py](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/src/trace_db.py), [trace_k8s.py](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/src/trace_k8s.py), [trace_main.py](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/src/trace_main.py)): Connects to YSQL, generates and inserts a row with a unique `trace_id`, concurrently streams and filters container stdout logs from multiple `yb-tserver` pods using `kubernetes` Python SDK, and appends them with standard UTC timestamps to a shared volume.
+*   **Trace Verifier** ([src/trace_verifier/](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/src/trace_verifier/)): Command-line analyzer that parses a set of write path rules ([trace_rules.yaml](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/trace_rules.yaml)) and verifies whether the expected log patterns (e.g., YSQL parse, Raft WAL append, consensus update, MemTable apply) are present in the trace logs.
+*   **Kubernetes Resources** ([k8s/job.yaml](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/k8s/job.yaml), [k8s/rbac.yaml](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/k8s/rbac.yaml), [Dockerfile.tracer](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/Dockerfile.tracer)): ServiceAccount with read-only access to pod logs, and a Job configuration executing the trace workflow with a PVC mount to persist log reports.
+
+### Usage
+
+#### 1. Setup Prerequisites
+Ensure you are connected to a Kubernetes cluster running YugabyteDB in the `yb-demo` namespace (with pods named `yb-tserver-0`, `yb-tserver-1`, `yb-tserver-2`). Build and load the Docker image `custom/yb-tracer:latest`, and apply RBAC configuration:
+```bash
+kubectl apply -f k8s/rbac.yaml
+```
+
+#### 2. Execute Trace and Verification
+Run the following make command to delete any existing trace job, trigger a new tracer execution, retrieve the logs, and verify the write path steps:
+```bash
+make verify-trace
+```
+
+#### 3. Verification Rules Configuration
+The verification stages and regex log patterns are defined in [trace_rules.yaml](file:///Users/zx1986/Projects/null-ptr-exception/yugabyte-toolkit/trace_rules.yaml). You can modify these patterns or add optional/required stages to customize verification checks:
+```yaml
+name: "Standard Insert Write Path"
+description: "Verifies the standard Raft write behavior in YugabyteDB"
+stages:
+  - id: "ysql_parse"
+    name: "YSQL Parser and Planner"
+    pattern: "statement: INSERT INTO test_table"
+    required: true
+  - id: "raft_append"
+    name: "Leader Appends to WAL"
+    pattern: "Appending to Raft Log"
+    required: true
+```
+

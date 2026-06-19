@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down generate write-single write-parallel read-standard read-optimized all-tests cluster-up cluster-down cluster-status test-multi-node
+.PHONY: help db-up db-down generate write-single write-parallel read-standard read-optimized all-tests cluster-up cluster-down cluster-status test-multi-node verify-trace
 
 # Default configurations
 FILE ?= bench.csv
@@ -6,6 +6,7 @@ ROWS ?= 1000000
 WORKERS ?= 20
 DURATION ?= 60
 CONFIG ?= config.yaml
+YB_NAMESPACE ?= yb-demo
 
 help:
 	@echo "YugabyteDB Benchmark Tool Makefile"
@@ -83,3 +84,15 @@ all-tests: db-up generate write-parallel read-standard read-optimized
 
 test-multi-node: cluster-up
 	uv run python -m pytest tests/test_multi_node_perf.py -v -s
+
+verify-trace:
+	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up previous job..."
+	kubectl delete job yb-insert-tracer -n $(YB_NAMESPACE) --ignore-not-found
+	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Applying trace job..."
+	kubectl apply -f k8s/job.yaml
+	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Waiting for job to complete..."
+	kubectl wait --for=condition=complete job/yb-insert-tracer -n $(YB_NAMESPACE) --timeout=120s
+	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Fetching logs..."
+	kubectl logs jobs/yb-insert-tracer -n $(YB_NAMESPACE) > local_trace.log
+	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Running verifier..."
+	uv run python -m src.trace_verifier.cli --rules trace_rules.yaml --log-file local_trace.log

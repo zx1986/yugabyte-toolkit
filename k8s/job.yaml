@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: yb-insert-tracer
+  namespace: yb-demo
+spec:
+  template:
+    spec:
+      serviceAccountName: yb-trace-sa
+      containers:
+      - name: tracer
+        image: custom/yb-tracer:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: TRACE_OUT_FILE
+          value: /mnt/trace/yugabyte_insert_trace.log
+        - name: YB_HOST
+          value: yb-tserver.yb-demo.svc.cluster.local
+        - name: YB_PORT
+          value: "5433"
+        - name: YB_DBNAME
+          value: yugabyte
+        - name: YB_USER
+          value: yugabyte
+        - name: YB_PASSWORD
+          value: password
+        - name: TRACE_WAIT_SECONDS
+          value: "10"
+        volumeMounts:
+        - name: trace-storage
+          mountPath: /mnt/trace
+      volumes:
+      - name: trace-storage
+        persistentVolumeClaim:
+          claimName: yb-trace-pvc
+      restartPolicy: Never
+  backoffLimit: 0
