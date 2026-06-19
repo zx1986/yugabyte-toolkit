@@ -1,6 +1,8 @@
 -- Schema initialization for hash vs range sharding benchmark
 -- See: specs/002-yb-multi-node/data-model.md
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Drop existing tables if present (ensures clean state on re-run)
 DROP TABLE IF EXISTS users_hash;
 DROP TABLE IF EXISTS users_range;
