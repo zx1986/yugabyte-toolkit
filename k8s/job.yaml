@@ -2,7 +2,6 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: yb-insert-tracer
-  namespace: yb-demo
 spec:
   template:
     spec:
@@ -19,7 +18,7 @@ spec:
         - name: TRACE_OUT_FILE
           value: /mnt/trace/yugabyte_insert_trace.log
         - name: YB_HOST
-          value: yb-tserver.yb-demo.svc.cluster.local
+          value: yb-tserver.$(POD_NAMESPACE).svc.cluster.local
         - name: YB_PORT
           value: "5433"
         - name: YB_DBNAME
