@@ -1,0 +1,25 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Monitor YugabyteDB (Placeholder)",
+  "editable": true,
+  "gnetId": 12620,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [],
+  "schemaVersion": 26,
+  "title": "YugabyteDB",
+  "timezone": "browser",
+  "version": 1
+}
