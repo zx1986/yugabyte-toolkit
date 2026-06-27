@@ -107,7 +107,7 @@
     - name: Prometheus
       type: prometheus
       access: proxy
-      url: http://yb-prometheus:9090
+      url: http://prometheus:9090
       isDefault: true
       editable: true
   ```
@@ -155,7 +155,7 @@
 - Modify: `docker-compose.yaml`
 
 - [ ] **Step 1: Append prometheus and grafana services**
-  Edit `docker-compose.yaml`. At the end of the `services:` block, append the definitions for `prometheus` and `grafana`. Also declare the volume `yb_prometheus_data` under the root-level `volumes:` section.
+  Edit `docker-compose.yaml`. At the end of the `services:` block, append the definitions for `prometheus` and `grafana`. Also declare the volumes `yb_prometheus_data` and `yb_grafana_data` under the root-level `volumes:` section.
   
   Locate the end of `services:` definition:
   ```yaml
@@ -192,6 +192,7 @@
         - "3000:3000"
       volumes:
         - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+        - yb_grafana_data:/var/lib/grafana
         - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
       environment:
         - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -202,13 +203,14 @@
         - prometheus
   ```
 
-  And add the Prometheus persistent volume at the bottom under `volumes:`:
+  And add the Prometheus and Grafana persistent volumes at the bottom under `volumes:`:
   ```diff
    volumes:
      yb_data1:
      yb_data2:
      yb_data3:
   +  yb_prometheus_data:
+  +  yb_grafana_data:
   ```
 
 - [ ] **Step 2: Validate docker-compose config syntax**

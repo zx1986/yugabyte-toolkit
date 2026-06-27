@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down generate write-single write-parallel read-standard read-optimized all-tests cluster-up cluster-down cluster-status test-multi-node verify-trace
+.PHONY: help db-up db-down generate write-single write-parallel read-standard read-optimized all-tests cluster-up cluster-down cluster-status test-multi-node ngrok verify-trace
 
 # Default configurations
 FILE ?= bench.csv
@@ -20,6 +20,7 @@ help:
 	@echo "  make cluster-status  - Check status of all cluster nodes"
 	@echo "  make cluster-down    - Tear down cluster and wipe all data volumes"
 	@echo "  make test-multi-node - Run hash vs range sharding benchmark tests"
+	@echo "  make ngrok           - Start metrics stack and expose local Grafana via ngrok"
 	@echo ""
 	@echo "Data Generation:"
 	@echo "  make generate        - Generate $(ROWS) rows of mock data into $(FILE)"
@@ -84,6 +85,12 @@ all-tests: db-up generate write-parallel read-standard read-optimized
 
 test-multi-node: cluster-up
 	uv run python -m pytest tests/test_multi_node_perf.py -v -s
+
+ngrok:
+	docker compose --profile metrics up -d
+	@echo "Grafana should be available locally at http://localhost:3000"
+	@echo "Starting ngrok tunnel for Grafana. Share the Forwarding URL for SRE dashboard review."
+	ngrok http 3000
 
 verify-trace:
 	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up previous job..."

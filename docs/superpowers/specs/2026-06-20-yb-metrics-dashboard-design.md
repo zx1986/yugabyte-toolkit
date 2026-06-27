@@ -125,7 +125,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://yb-prometheus:9090
+    url: http://prometheus:9090
     isDefault: true
     editable: true
 ```
@@ -182,6 +182,7 @@ Add `prometheus` and `grafana` services mapped under the `metrics` profile to pr
       - "3000:3000"
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - yb_grafana_data:/var/lib/grafana
       - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -193,6 +194,7 @@ Add `prometheus` and `grafana` services mapped under the `metrics` profile to pr
 
 volumes:
   yb_prometheus_data:
+  yb_grafana_data:
 ```
 
 ---
