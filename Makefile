@@ -89,7 +89,7 @@ verify-trace:
 	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up previous job..."
 	kubectl delete job yb-insert-tracer -n $(YB_NAMESPACE) --ignore-not-found
 	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Applying trace job..."
-	kubectl apply -f k8s/job.yaml
+	kubectl apply -f k8s/job.yaml -n $(YB_NAMESPACE)
 	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Waiting for job to complete..."
 	kubectl wait --for=condition=complete job/yb-insert-tracer -n $(YB_NAMESPACE) --timeout=120s
 	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Fetching logs..."

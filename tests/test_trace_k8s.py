@@ -62,3 +62,57 @@ def test_stream_logs_empty_chunks_skipped():
 
     assert len(lines) == 1
     assert "trace_id_1" in lines[0]
+
+
+def test_stream_logs_buffers_split_lines_and_prints_matches(capsys):
+    mock_api = MagicMock()
+    mock_api.read_namespaced_pod_log.return_value = [
+        b"noise\npartial trace",
+        b"123 line\nother trace123 line\n",
+    ]
+
+    with tempfile.NamedTemporaryFile(mode="w+", suffix=".log", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    stream_logs_and_filter(mock_api, "ns", "pod-0", "trace123", tmp_path)
+
+    with open(tmp_path) as f:
+        lines = f.readlines()
+
+    captured = capsys.readouterr()
+    assert len(lines) == 2
+    assert "partial trace123 line" in lines[0]
+    assert "other trace123 line" in lines[1]
+    assert "partial trace123 line" in captured.out
+
+
+def test_stream_logs_preserves_split_utf8_characters():
+    mock_api = MagicMock()
+    encoded = "trace123 café\n".encode()
+    mock_api.read_namespaced_pod_log.return_value = [
+        encoded[:12],
+        encoded[12:],
+    ]
+
+    with tempfile.NamedTemporaryFile(mode="w+", suffix=".log", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    stream_logs_and_filter(mock_api, "ns", "pod-0", "trace123", tmp_path)
+
+    with open(tmp_path) as f:
+        content = f.read()
+
+    assert "café" in content
+
+
+def test_stream_logs_reports_stream_errors(capsys):
+    mock_api = MagicMock()
+    mock_api.read_namespaced_pod_log.side_effect = RuntimeError("boom")
+
+    with tempfile.NamedTemporaryFile(mode="w+", suffix=".log", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    stream_logs_and_filter(mock_api, "ns", "pod-0", "trace123", tmp_path)
+
+    captured = capsys.readouterr()
+    assert "[ERROR] [pod-0] Log stream failed: boom" in captured.out
