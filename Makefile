@@ -88,6 +88,18 @@ test-multi-node: cluster-up
 
 ngrok:
 	docker compose --profile metrics up -d
+	@echo "Waiting for YSQL and enabling pg_stat_statements for query dashboards..."
+	@for i in $$(seq 1 30); do \
+		if docker exec yb-node1 bin/ysqlsh -h yb-node1 -U yugabyte -d yugabyte -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null 2>&1; then \
+			echo "YSQL observability views are ready."; \
+			break; \
+		fi; \
+		if [ "$$i" = "30" ]; then \
+			echo "YSQL did not become ready in time."; \
+			exit 1; \
+		fi; \
+		sleep 3; \
+	done
 	@echo "Grafana should be available locally at http://localhost:3000"
 	@echo "Starting ngrok tunnel for Grafana. Share the Forwarding URL for SRE dashboard review."
 	ngrok http 3000
