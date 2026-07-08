@@ -1,0 +1,421 @@
+{
+  "uid": "yb-sre-hotspots",
+  "title": "YugabyteDB SRE - Hotspots",
+  "tags": [
+    "YugabyteDB",
+    "SRE",
+    "hotspots",
+    "prometheus",
+    "ysql"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "editable": true,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "dbcluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(node_prefix)",
+        "label": "YugabyteDB Cluster",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Top Tables by Read Ops",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (table_name) (irate(rpc_latency_count{node_prefix=\"$dbcluster\",export_type=\"tserver_export\",saved_name=\"handler_latency_yb_tserver_TabletServerService_Read_count\",table_name!=\"\"}[5m])))",
+          "legendFormat": "{{table_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Top Tables by Write Ops",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "topk(10, sum by (table_name) (irate(rpc_latency_count{node_prefix=\"$dbcluster\",export_type=\"tserver_export\",saved_name=\"handler_latency_yb_tserver_TabletServerService_Write_count\",table_name!=\"\"}[5m])))",
+          "legendFormat": "{{table_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Node Read/Write Pressure",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (exported_instance) (irate(rpc_latency_count{node_prefix=\"$dbcluster\",export_type=\"tserver_export\",saved_name=\"handler_latency_yb_tserver_TabletServerService_Read_count\"}[5m]))",
+          "legendFormat": "{{exported_instance}} read",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (exported_instance) (irate(rpc_latency_count{node_prefix=\"$dbcluster\",export_type=\"tserver_export\",saved_name=\"handler_latency_yb_tserver_TabletServerService_Write_count\"}[5m]))",
+          "legendFormat": "{{exported_instance}} write",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "High Frequency DB Users",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "ysql"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "ysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT r.rolname AS usename, sum(s.calls) AS calls,\n                               round(sum(s.total_time)::numeric, 2) AS total_time_ms,\n                               round((sum(s.total_time) / nullif(sum(s.calls), 0))::numeric, 2) AS avg_time_ms\n                        FROM pg_stat_statements s\n                        JOIN pg_roles r ON r.oid = s.userid\n                        GROUP BY r.rolname\n                        ORDER BY calls DESC\n                        LIMIT 20;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Top Client Addresses",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "ysql"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "ysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT client_addr::text AS client_addr, usename,\n                               count(*) AS sessions,\n                               count(*) FILTER (WHERE state = 'active') AS active_sessions\n                        FROM pg_stat_activity\n                        WHERE client_addr IS NOT NULL\n                        GROUP BY client_addr, usename\n                        ORDER BY sessions DESC, active_sessions DESC\n                        LIMIT 20;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Table Storage Footprint",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "ysql"
+      },
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "ysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT schemaname, relname AS table_name,\n                               pg_size_pretty(pg_total_relation_size(format('%I.%I', schemaname, relname))) AS total_size,\n                               pg_total_relation_size(format('%I.%I', schemaname, relname)) AS bytes\n                        FROM pg_stat_user_tables\n                        ORDER BY bytes DESC\n                        LIMIT 20;",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ]
+}

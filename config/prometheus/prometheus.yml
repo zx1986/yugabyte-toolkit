@@ -1,0 +1,58 @@
+global:
+  scrape_interval: 1s
+  evaluation_interval: 1s
+
+scrape_configs:
+  - job_name: "yugabytedb-local"
+    metrics_path: /prometheus-metrics
+    relabel_configs:
+      - target_label: "node_prefix"
+        replacement: "local-ycpg"
+
+    metric_relabel_configs:
+      - source_labels: ["__name__"]
+        regex: "(.*)"
+        target_label: "saved_name"
+        replacement: "$1"
+      - source_labels: ["__name__"]
+        regex: "handler_latency_(yb_[^_]*)_([^_]*)_([^_]*)(.*)"
+        target_label: "server_type"
+        replacement: "$1"
+      - source_labels: ["__name__"]
+        regex: "handler_latency_(yb_[^_]*)_([^_]*)_([^_]*)(.*)"
+        target_label: "service_type"
+        replacement: "$2"
+      - source_labels: ["__name__"]
+        regex: "handler_latency_(yb_[^_]*)_([^_]*)_([^_]*)(_sum|_count)?"
+        target_label: "service_method"
+        replacement: "$3"
+      - source_labels: ["__name__"]
+        regex: "handler_latency_(yb_[^_]*)_([^_]*)_([^_]*)(_sum|_count)?"
+        target_label: "__name__"
+        replacement: "rpc_latency$4"
+
+    static_configs:
+      - targets: ["yb-node1:7000", "yb-node2:7000", "yb-node3:7000"]
+        labels:
+          group: "yb-master"
+          export_type: "master_export"
+
+      - targets: ["yb-node1:9000", "yb-node2:9000", "yb-node3:9000"]
+        labels:
+          group: "yb-tserver"
+          export_type: "tserver_export"
+
+      - targets: ["yb-node1:12000", "yb-node2:12000", "yb-node3:12000"]
+        labels:
+          group: "ycql"
+          export_type: "cql_export"
+
+      - targets: ["yb-node1:13000", "yb-node2:13000", "yb-node3:13000"]
+        labels:
+          group: "ysql"
+          export_type: "ysql_export"
+
+      - targets: ["yb-node1:11000", "yb-node2:11000", "yb-node3:11000"]
+        labels:
+          group: "yedis"
+          export_type: "redis_export"

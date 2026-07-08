@@ -1,4 +1,4 @@
-.PHONY: help db-up db-down generate write-single write-parallel read-standard read-optimized all-tests cluster-up cluster-down cluster-status test-multi-node verify-trace
+.PHONY: help db-up db-down generate write-single write-parallel read-standard read-optimized all-tests cluster-up cluster-down cluster-status test-multi-node ngrok verify-trace
 
 # Default configurations
 FILE ?= bench.csv
@@ -20,6 +20,7 @@ help:
 	@echo "  make cluster-status  - Check status of all cluster nodes"
 	@echo "  make cluster-down    - Tear down cluster and wipe all data volumes"
 	@echo "  make test-multi-node - Run hash vs range sharding benchmark tests"
+	@echo "  make ngrok           - Start metrics stack and expose local Grafana via ngrok"
 	@echo ""
 	@echo "Data Generation:"
 	@echo "  make generate        - Generate $(ROWS) rows of mock data into $(FILE)"
@@ -84,6 +85,24 @@ all-tests: db-up generate write-parallel read-standard read-optimized
 
 test-multi-node: cluster-up
 	uv run python -m pytest tests/test_multi_node_perf.py -v -s
+
+ngrok:
+	docker compose --profile metrics up -d
+	@echo "Waiting for YSQL and enabling pg_stat_statements for query dashboards..."
+	@for i in $$(seq 1 30); do \
+		if docker exec yb-node1 bin/ysqlsh -h yb-node1 -U yugabyte -d yugabyte -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null 2>&1; then \
+			echo "YSQL observability views are ready."; \
+			break; \
+		fi; \
+		if [ "$$i" = "30" ]; then \
+			echo "YSQL did not become ready in time."; \
+			exit 1; \
+		fi; \
+		sleep 3; \
+	done
+	@echo "Grafana should be available locally at http://localhost:3000"
+	@echo "Starting ngrok tunnel for Grafana. Share the Forwarding URL for SRE dashboard review."
+	ngrok http 3000
 
 verify-trace:
 	@echo "[$(shell date -u +%Y-%m-%dT%H:%M:%SZ)] Cleaning up previous job..."
